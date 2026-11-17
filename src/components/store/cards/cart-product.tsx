@@ -1,0 +1,349 @@
+import { useCartStore } from "@/cart-store/useCartStore";
+import { CartProductType, Country } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { addToWishlist } from "@/queries/user";
+import { trackWishlistAdd } from "@/lib/posthog-tracking";
+import {
+  Check,
+  ChevronRight,
+  Heart,
+  Minus,
+  Plus,
+  Trash,
+  Truck,
+} from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { Dispatch, SetStateAction, useEffect, useState, useCallback } from "react";
+import toast from "react-hot-toast";
+
+interface Props {
+  product: CartProductType;
+  selectedItems: CartProductType[];
+  setSelectedItems: Dispatch<SetStateAction<CartProductType[]>>;
+  setTotalShipping: Dispatch<SetStateAction<number>>;
+  userCountry: Country;
+}
+
+const CartProduct = ({
+  product,
+  selectedItems,
+  setSelectedItems,
+  setTotalShipping,
+  userCountry,
+}: Props) => {
+  const {
+    productId,
+    variantId,
+    productSlug,
+    variantSlug,
+    name,
+    variantName,
+    sizeId,
+    image,
+    price,
+    quantity,
+    stock,
+    size,
+    weight,
+    shippingMethod,
+    shippingService,
+    shippingFee,
+    extraShippingFee,
+  } = product;
+
+  const unique_id = `${productId}-${variantId}-${sizeId}`;
+
+  const totalPrice = price * quantity;
+
+  const [shippingInfo, setShippingInfo] = useState({
+    initialFee: 0,
+    extraFee: 0,
+    totalFee: 0,
+    method: shippingMethod,
+    weight,
+    shippingService,
+  });
+
+  // Stable calculator to keep dependencies minimal and avoid stale totals
+  const calculateShipping = useCallback(() => {
+    if (stock <= 0) return;
+    setShippingInfo((prev) => {
+      let initialFee = 0;
+      let extraFee = 0;
+      let totalFee = 0;
+
+      if (shippingMethod === "ITEM") {
+        initialFee = shippingFee;
+        extraFee = quantity > 1 ? extraShippingFee * (quantity - 1) : 0;
+        totalFee = initialFee + extraFee;
+      } else if (shippingMethod === "WEIGHT") {
+        totalFee = shippingFee * weight * quantity;
+      } else if (shippingMethod === "FIXED") {
+        totalFee = shippingFee;
+      }
+
+      return {
+        initialFee,
+        extraFee,
+        totalFee,
+        method: shippingMethod,
+        weight,
+        shippingService,
+      };
+    });
+  }, [extraShippingFee, quantity, shippingFee, shippingMethod, shippingService, stock, weight]);
+
+  // Recalculate on relevant changes or on mount
+  useEffect(() => {
+    calculateShipping();
+  }, [calculateShipping, userCountry]);
+
+  // Update the total shipping in the parent component AFTER the local shipping info is updated.
+  useEffect(() => {
+    setTotalShipping((prevTotal) => prevTotal + shippingInfo.totalFee);
+
+    // Cleanup function to subtract the fee when the component unmounts or quantity changes
+    return () => {
+      setTotalShipping((prevTotal) => prevTotal - shippingInfo.totalFee);
+    };
+  }, [shippingInfo.totalFee, setTotalShipping]);
+
+  const selected = selectedItems.find(
+    (p) => unique_id === `${p.productId}-${p.variantId}-${p.sizeId}`
+  );
+
+  // const { updateProductQuantity, removeFromCart } = useCartStore(
+  //   (state: number) => state
+  // );
+
+  // Corrected code
+const { updateProductQuantity, removeFromCart } = useCartStore((state) => state);
+
+
+  const handleSelectProduct = () => {
+    setSelectedItems((prev) => {
+      const exists = prev.some(
+        (item) =>
+          item.productId === product.productId &&
+          item.variantId === product.variantId &&
+          item.sizeId === product.sizeId
+      );
+      return exists
+        ? prev.filter((item) => item !== product) // Remove if exists
+        : [...prev, product]; // Add if not exists
+    });
+  };
+
+  const updateProductQuantityHandler = (type: "add" | "remove") => {
+    if (type === "add" && quantity < stock) {
+      // Increase quantity by 1 but ensure it doesn't exceed stock
+      updateProductQuantity(product, quantity + 1);
+    } else if (type === "remove" && quantity > 1) {
+      // Decrease quantity by 1 but ensure it doesn't go below 1
+      updateProductQuantity(product, quantity - 1);
+    }
+  };
+
+  // Handle add product to wishlist
+  const handleaddToWishlist = async () => {
+    const res = await addToWishlist(productId, variantId, sizeId);
+    
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    
+    trackWishlistAdd({
+      id: productId,
+      name,
+      price,
+    });
+    toast.success("Product successfully added to your wishlist!");
+  };
+
+  return (
+    <div
+      className={cn("bg-white px-3 sm:px-6 border-t bordet-t-[#ebebeb] select-none rounded-lg", {
+        "bg-red-100": stock === 0,
+      })}
+    >
+      <div className="py-4">
+        <div className="relative flex self-start">
+          {/* Image */}
+          <div className="flex items-center">
+            {stock > 0 && (
+              <label
+                htmlFor={unique_id}
+                className="p-0 text-gray-900 text-sm leading-6 inline-flex items-center mr-2 cursor-pointer align-middle"
+              >
+                <span className="leading-8 inline-flex p-0.5 cursor-pointer ">
+                  <span
+                    className={cn(
+                      "leading-8 w-5 h-5 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:border-orange-background",
+                      {
+                        "border-orange-background": selected,
+                      }
+                    )}
+                  >
+                    {selected && (
+                      <span className="bg-orange-background  w-5 h-5 rounded-full flex items-center justify-center">
+                        <Check className="w-3.5 text-white mt-0.5" />
+                      </span>
+                    )}
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  id={unique_id}
+                  hidden
+                  onChange={() => handleSelectProduct()}
+                />
+              </label>
+            )}
+            <Link
+              href={`/product/${productSlug}/${variantSlug}?size=${sizeId}`}
+            >
+              <div className="m-0 mr-2 sm:mr-4 ml-1 sm:ml-2 w-20 h-20 sm:w-28 sm:h-28 bg-gray-200 relative rounded-lg">
+                <Image
+                  src={image}
+                  alt={name}
+                  height={200}
+                  width={200}
+                  className="w-full h-full object-cover rounded-md"
+                />
+              </div>
+            </Link>
+          </div>
+          {/* Info */}
+          <div className="w-0 min-w-0 flex-1">
+            {/* Title - Actions */}
+            <div className="pr-16 flex items-start">
+              <Link
+                href={`/product/${productSlug}/${variantSlug}?size=${sizeId}`}
+                className="text-sm font-medium text-gray-900 line-clamp-2 leading-snug hover:underline"
+              >
+                {name} · {variantName}
+              </Link>
+              <div className="absolute top-0 right-0 flex items-center gap-0.5">
+                <button
+                  type="button"
+                  aria-label="Add to wishlist"
+                  className="p-1.5 cursor-pointer inline-flex items-center justify-center rounded-full hover:bg-gray-100"
+                  onClick={() => handleaddToWishlist()}
+                >
+                  <Heart className="w-4 h-4 hover:stroke-orange-seconadry" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Remove from cart"
+                  className="p-1.5 cursor-pointer inline-flex items-center justify-center rounded-full hover:bg-gray-100"
+                  onClick={() => removeFromCart(product)}
+                >
+                  <Trash className="w-4 h-4 hover:stroke-orange-seconadry" />
+                </button>
+              </div>
+            </div>
+            {/* Style - size */}
+            <div className="my-1.5">
+              <button
+                type="button"
+                className="text-main-primary relative min-h-[24px] bg-gray-100 whitespace-normal px-2.5 py-0.5 max-w-full text-xs leading-4 rounded-xl font-bold cursor-pointer outline-0"
+              >
+                <span className="flex items-center justify-between gap-1">
+                  <span className="text-left inline-block truncate max-w-full">
+                    {size}
+                  </span>
+                  <ChevronRight className="w-3 shrink-0" />
+                </span>
+              </button>
+            </div>
+            {/* Price - Delivery */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mt-2 relative gap-2">
+              {stock > 0 ? (
+                <div className="flex flex-wrap items-baseline gap-x-1 text-sm sm:text-base">
+                  <span className="whitespace-nowrap">
+                    R{price.toFixed(2)} x {quantity}
+                  </span>
+                  <span className="font-semibold whitespace-nowrap">
+                    = R{totalPrice.toFixed(2)}
+                  </span>
+                </div>
+              ) : (
+                <div>
+                  <span className="inline-block text-sm text-red-500 font-medium">
+                    Out of stock
+                  </span>
+                </div>
+              )}
+              {/* Quantity changer */}
+              <div className="text-xs">
+                <div className="text-gray-900 text-sm leading-6 list-none inline-flex items-center">
+                  <div
+                    className="w-7 h-7 sm:w-6 sm:h-6 text-xs bg-gray-100 hover:bg-gray-200 active:bg-gray-300 leading-6 grid place-items-center rounded-full cursor-pointer"
+                    onClick={() => updateProductQuantityHandler("remove")}
+                  >
+                    <Minus className="w-3 stroke-[#555]" />
+                  </div>
+                  <input
+                    type="text"
+                    value={quantity}
+                    min={1}
+                    max={stock}
+                    className="m-1 h-6 w-[32px] bg-transparent border-none leading-6 tracking-normal text-center outline-none text-gray-900 font-bold"
+                    readOnly
+                  />
+                  <div
+                    className="w-7 h-7 sm:w-6 sm:h-6 text-xs bg-gray-100 hover:bg-gray-200 active:bg-gray-300 leading-6 grid place-items-center rounded-full cursor-pointer"
+                    onClick={() => updateProductQuantityHandler("add")}
+                  >
+                    <Plus className="w-3 stroke-[#555]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* Shipping info */}
+            {stock > 0 && (
+              <div className="mt-1 text-xs text-[#999] cursor-pointer">
+                <div className="flex items-center mb-1">
+                  <span>
+                    <Truck className="w-4 inline-block text-[#01A971]" />
+                    {shippingInfo.totalFee > 0 ? (
+                      <span className="text-[#01A971] ml-1">
+                        {shippingMethod === "ITEM" ? (
+                          <>
+                           R{shippingInfo.initialFee} (first item)
+                            {quantity > 1
+                              ? `+ 
+                              ${quantity - 1} item(s) x R${extraShippingFee} 
+                              (additional items)`
+                              : " x 1"}
+                            = R{shippingInfo.totalFee.toFixed(2)}
+                          </>
+                        ) : shippingMethod === "WEIGHT" ? (
+                          <>
+                            R{shippingFee} x {shippingInfo.weight}kg x&nbsp;
+                            {quantity} {quantity > 1 ? "items" : "item"} = R
+                            {shippingInfo.totalFee.toFixed(2)}
+                          </>
+                        ) : (
+                          <>Fixed Fee : R{shippingInfo.totalFee.toFixed(2)}</>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-[#01A971] ml-1">
+                        BobGo courier calculated at checkout
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CartProduct;

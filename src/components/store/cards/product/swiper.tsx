@@ -1,0 +1,59 @@
+//React, Nextjs
+import Image from "next/image";
+
+// Import Swiper React components
+import { Swiper, SwiperSlide } from "swiper/react";
+import type { SwiperRef } from "swiper/react";
+import { Autoplay } from "swiper/modules";
+
+// Import Swiper styles
+import "swiper/css";
+import "swiper/css/pagination";
+import "swiper/css/navigation";
+
+// Types
+import { ProductVariantImage } from "@prisma/client";
+import { useEffect, useRef } from "react";
+
+export default function ProductCardImageSwiper({
+  images,
+}: {
+  images: ProductVariantImage[];
+}) {
+  const swiperRef = useRef<SwiperRef | null>(null);
+  useEffect(() => {
+    swiperRef.current?.swiper?.autoplay?.stop();
+  }, []);
+  return (
+    <div
+      className="relative w-full aspect-square contrast-[90%] overflow-hidden rounded-2xl"
+      onMouseEnter={() => swiperRef.current?.swiper?.autoplay?.start()}
+      onMouseLeave={() => {
+        swiperRef.current?.swiper?.autoplay?.stop();
+        swiperRef.current?.swiper?.slideTo(0);
+      }}
+    >
+      <Swiper
+        ref={swiperRef}
+        modules={[Autoplay]}
+        autoplay={{ delay: 500 }}
+        className="h-full w-full"
+      >
+        {images.map((img) => (
+          <SwiperSlide key={img.id} className="!h-full !w-full">
+            <Image
+              src={img.url}
+              alt=""
+              width={400}
+              height={400}
+              className="block object-cover h-full w-full scale-110"
+              loading="lazy"
+              quality={75}
+              priority={false}
+            />
+          </SwiperSlide>
+        ))}
+      </Swiper>
+    </div>
+  );
+}

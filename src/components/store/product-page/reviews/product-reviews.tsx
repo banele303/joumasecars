@@ -1,0 +1,146 @@
+"use client";
+import {
+  RatingStatisticsType,
+  ReviewsFiltersType,
+  ReviewsOrderType,
+  ReviewWithImageType,
+  VariantInfoType,
+} from "@/lib/types";
+import { FC, useCallback, useEffect, useMemo, useState } from "react";
+import RatingCard from "../../cards/product-rating";
+import RatingStatisticsCard from "../../cards/rating-statistics";
+import ReviewCard from "../../cards/review";
+import { getProductFilteredReviews } from "@/queries/product";
+import ReviewsFilters from "./filters";
+import ReviewsSort from "./sort";
+import Paginaion from "../../shared/pagination";
+import ReviewDetails from "../../forms/review-details";
+
+interface Props {
+  productId: string;
+  rating: number;
+  statistics: RatingStatisticsType;
+  reviews: ReviewWithImageType[];
+  variantsInfo: VariantInfoType[];
+}
+
+const ProductReviews: FC<Props> = ({
+  productId,
+  rating,
+  statistics,
+  reviews,
+  variantsInfo,
+}) => {
+  const [data, setData] = useState<ReviewWithImageType[]>(reviews);
+  const { totalReviews, ratingStatistics } = statistics;
+  const half = useMemo(() => Math.ceil(data.length / 2), [data.length]);
+
+  // Filtering
+  const filtered_data = {
+    rating: undefined,
+    hasImages: undefined,
+  };
+  const [filters, setFilters] = useState<ReviewsFiltersType>(filtered_data);
+
+  // Sorting
+  const [sort, setSort] = useState<ReviewsOrderType>();
+
+  // Pagination
+  const [page, setPage] = useState<number>(1);
+  const pageSize = 6;
+
+  const handleGetReviews = useCallback(async () => {
+    const res = await getProductFilteredReviews(
+      productId,
+      filters,
+      sort,
+      page,
+      pageSize
+    );
+    setData(res);
+  }, [filters, page, pageSize, productId, sort]);
+
+  useEffect(() => {
+    handleGetReviews();
+  }, [handleGetReviews]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filters, sort]);
+
+  return (
+    <div id="reviews" className="pt-6">
+      {/* Title */}
+      <div className="h-12">
+        <h2 className="text-main-primary text-xl sm:text-2xl font-bold">
+          Customer Reviews ({totalReviews})
+        </h2>
+      </div>
+      {/* Statistics */}
+      <div className="w-full">
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+          <RatingCard rating={rating} />
+          <RatingStatisticsCard statistics={ratingStatistics} />
+        </div>
+      </div>
+      {totalReviews > 0 && (
+        <>
+          <div className="space-y-6">
+            <ReviewsFilters
+              filters={filters}
+              setFilters={setFilters}
+              setSort={setSort}
+              stats={statistics}
+            />
+            <ReviewsSort sort={sort} setSort={setSort} />
+          </div>
+          {/* Reviews */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {data.length > 0 ? (
+              <>
+                <div className="flex flex-col gap-3">
+                  {data.slice(0, half).map((review) => (
+                    <ReviewCard key={review.id} review={review} />
+                  ))}
+                </div>
+                <div className="flex flex-col gap-3">
+                  {data.slice(half).map((review) => (
+                    <ReviewCard key={review.id} review={review} />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>No Reviews.</>
+            )}
+          </div>
+          {totalReviews > pageSize && (
+            <Paginaion
+              page={page}
+              totalPages={
+                Math.ceil(
+                  (filters.rating
+                    ? ratingStatistics.find((r) => r.rating === filters.rating)
+                        ?.numReviews ?? data.length
+                    : filters.hasImages
+                    ? statistics.reviewsWithImagesCount
+                    : totalReviews) / pageSize
+                )
+              }
+              setPage={setPage}
+            />
+          )}
+        </>
+      )}
+      <div className="mt-10">
+        <ReviewDetails
+          productId={productId}
+          variantsInfo={variantsInfo}
+          setReviews={setData}
+          reviews={data}
+        />
+      </div>
+    </div>
+  );
+};
+
+export default ProductReviews;

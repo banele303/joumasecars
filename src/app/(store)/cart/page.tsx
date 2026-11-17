@@ -1,0 +1,28 @@
+import CartContainer from "@/components/store/cart-page/container";
+import { Country } from "@/lib/types";
+import { cookies } from "next/headers";
+
+export default async function CartPage() {
+  // Get cookies from the store
+  const cookieStore = cookies();
+  const userCountryCookie = (await cookieStore).get("userCountry");
+
+  // Set default country if cookie is missing
+  let userCountry: Country = {
+    name: "South Africa",
+    city: "Johannesburg",
+    code: "ZA",
+    region: "Gauteng",
+  };
+
+  // If cookie exists, update the user country
+  if (userCountryCookie) {
+    userCountry = JSON.parse(userCountryCookie.value) as Country;
+  }
+  return (
+    <>
+      {/* <Header /> */}
+      <CartContainer userCountry={userCountry} />
+    </>
+  );
+}
